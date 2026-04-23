@@ -5,10 +5,13 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, RotateCcw, ArrowLeft, ArrowRight, ArrowDown, ArrowUp, Zap, Cpu, Activity, ShieldCheck } from 'lucide-react';
+import { Play, RotateCcw, ArrowLeft, ArrowRight, ArrowDown, ArrowUp, Zap, Cpu, Activity, ShieldCheck, Trophy, LogIn, LogOut } from 'lucide-react';
 import { useTetris } from './hooks/useTetris';
 import { BLOCK_SIZE, COLS, ROWS } from './constants';
 import { Piece } from './types';
+import { useAuth } from './lib/AuthContext';
+import { signInWithGoogle, logout } from './lib/firebase';
+import { saveHighScore, getLeaderboard } from './lib/scores';
 
 // Darker shades of the original colors for the bottom border depth effect
 const SHADE_COLORS: Record<string, string> = {
@@ -23,15 +26,43 @@ const SHADE_COLORS: Record<string, string> = {
 
 export default function App() {
   const { gameState, methods } = useTetris();
+  const { user, loading: authLoading } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nextCanvasRef = useRef<HTMLCanvasElement>(null);
   const holdCanvasRef = useRef<HTMLCanvasElement>(null);
   const [sessionTime, setSessionTime] = useState(0);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const hasSavedScore = useRef(false);
 
   useEffect(() => {
     const timer = setInterval(() => setSessionTime(t => t + 1), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Fetch leaderboard
+  const refreshLeaderboard = useCallback(async () => {
+    const data = await getLeaderboard(5);
+    if (data) setLeaderboard(data);
+  }, []);
+
+  useEffect(() => {
+    refreshLeaderboard();
+  }, [refreshLeaderboard]);
+
+  // Save score when game is over
+  useEffect(() => {
+    if (gameState.gameOver && gameState.score > 0 && user && !hasSavedScore.current) {
+      saveHighScore(gameState.score, gameState.level, gameState.lines)
+        .then(() => {
+          hasSavedScore.current = true;
+          refreshLeaderboard();
+        });
+    }
+    if (!gameState.gameOver) {
+      hasSavedScore.current = false;
+    }
+  }, [gameState.gameOver, gameState.score, user, gameState.level, gameState.lines, refreshLeaderboard]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -135,9 +166,6 @@ export default function App() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Grid (using grid-pattern background might be better, but we can draw lines if needed)
-    
-    // Draw Stationary blocks
     gameState.grid.forEach((row, y) => {
       row.forEach((color, x) => {
         if (color !== 0) {
@@ -146,7 +174,6 @@ export default function App() {
       });
     });
 
-    // Draw Active Piece and Ghost
     if (gameState.activePiece) {
       const ghostY = getGhostY();
       gameState.activePiece.shape.forEach((row, y) => {
@@ -168,13 +195,25 @@ export default function App() {
     if (hctx) drawPiecePreview(hctx, gameState.holdPiece, 80);
   }, [gameState.nextPiece, gameState.holdPiece]);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (gameState.gameOver && e.code === 'Space') {
-        methods.reset();
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input (if any were added)
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      
+      // Map global KeyboardEvent to our handleKeyDown logic
+      // We can just call handleKeyDown by creating a mock React SyntheticEvent
+      // or better, just extract the logic.
+      const gameCodes = ['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Space', 'KeyC', 'KeyP', 'KeyW', 'KeyA', 'KeyS', 'KeyD'];
+      if (gameCodes.includes(e.code)) {
+        e.preventDefault();
+      }
+
+      if (gameState.gameOver) {
+        if (e.code === 'Space' || e.code === 'Enter') methods.reset();
         return;
       }
-      if (gameState.gameOver) return;
       if (e.code === 'KeyP') {
         methods.togglePause();
         return;
@@ -182,21 +221,24 @@ export default function App() {
       if (gameState.paused) return;
 
       switch (e.code) {
-        case 'ArrowLeft': methods.move(-1); break;
-        case 'ArrowRight': methods.move(1); break;
-        case 'ArrowDown': methods.drop(); break;
-        case 'ArrowUp': methods.rotate(); break;
+        case 'ArrowLeft': case 'KeyA': methods.move(-1); break;
+        case 'ArrowRight': case 'KeyD': methods.move(1); break;
+        case 'ArrowDown': case 'KeyS': methods.drop(); break;
+        case 'ArrowUp': case 'KeyW': methods.rotate(); break;
         case 'Space': methods.hardDrop(); break;
         case 'KeyC': methods.hold(); break;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
   }, [gameState.gameOver, gameState.paused, methods]);
 
   return (
-    <div className="w-full h-screen bg-slate-50 text-slate-900 font-sans flex flex-col overflow-hidden select-none">
+    <div 
+      ref={containerRef}
+      className="w-full h-screen bg-slate-50 text-slate-900 font-sans flex flex-col overflow-hidden select-none outline-none focus:ring-0"
+    >
       {/* Header */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 shadow-sm z-10">
         <div className="flex items-center gap-3">
@@ -206,6 +248,23 @@ export default function App() {
           <h1 className="text-lg font-bold tracking-tight">TETRA<span className="text-indigo-600">CORE</span> <span className="text-slate-400 font-normal">v4.2</span></h1>
         </div>
         <div className="flex items-center gap-8 text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+          {user ? (
+            <div className="flex items-center gap-3">
+              <img src={user.photoURL || ''} alt="" className="w-6 h-6 rounded-full border border-slate-200" />
+              <span className="text-slate-900">{user.displayName}</span>
+              <button onClick={() => logout()} className="hover:text-red-500 transition-colors"><LogOut size={14}/></button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => signInWithGoogle()} 
+              disabled={authLoading}
+              className="flex items-center gap-2 bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50"
+            >
+              <LogIn size={14} />
+              <span>Sign In</span>
+            </button>
+          )}
+          <div className="w-px h-4 bg-slate-200"></div>
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-emerald-500" />
             <span>SYSTEM STABLE</span>
@@ -216,7 +275,14 @@ export default function App() {
       </header>
 
       {/* Main Game Area */}
-      <main className="flex-1 flex items-center justify-center gap-12 p-10 overflow-auto">
+      <main className="flex-1 flex items-center justify-center gap-12 p-10 overflow-auto relative">
+        {/* Click to focus overlay when not focused (safari/iframe issues) */}
+        {!gameState.gameOver && !gameState.paused && (
+          <button 
+            className="absolute inset-0 z-[5] cursor-default bg-transparent"
+            onClick={() => containerRef.current?.focus()}
+          />
+        )}
         
         {/* Left Stats Side */}
         <aside className="w-56 space-y-6 hidden lg:block">
@@ -242,6 +308,20 @@ export default function App() {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Hold Buffer</p>
             <div className="flex justify-center h-20 items-center">
               <canvas ref={holdCanvasRef} width={80} height={80} className="scale-110" />
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">On-Screen Controls</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div />
+              <button onClick={() => methods.rotate()} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowUp size={16} /></button>
+              <div />
+              <button onClick={() => methods.move(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowLeft size={16} /></button>
+              <button onClick={() => methods.drop()} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowDown size={16} /></button>
+              <button onClick={() => methods.move(1)} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowRight size={16} /></button>
+              <button onClick={() => methods.hold()} className="p-2 bg-slate-900 text-white border border-slate-200 rounded-lg text-[9px] font-bold uppercase tracking-widest flex items-center justify-center">HOLD</button>
+              <button onClick={() => methods.hardDrop()} className="p-2 bg-indigo-600 text-white border border-indigo-200 rounded-lg text-[9px] font-bold uppercase tracking-widest flex items-center justify-center col-span-2">DROP</button>
             </div>
           </div>
         </aside>
@@ -282,6 +362,8 @@ export default function App() {
                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Retrieval Output</p>
                           <p className="text-3xl font-mono font-bold text-indigo-600 tabular-nums">{gameState.score.toLocaleString()}</p>
+                          {!user && <p className="text-[9px] text-amber-600 font-bold mt-2 uppercase">Sign in to save score</p>}
+                          {user && hasSavedScore.current && <p className="text-[9px] text-emerald-600 font-bold mt-2 uppercase tracking-widest">Score Sync Successful</p>}
                         </div>
                       )}
 
@@ -309,40 +391,72 @@ export default function App() {
         {/* Right Info Side */}
         <aside className="w-56 space-y-6 hidden lg:block">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Next Module</p>
-            <div className="space-y-4">
-              <div className="flex flex-col items-center justify-center bg-slate-50 rounded-xl h-24 border border-slate-100">
-                <canvas ref={nextCanvasRef} width={80} height={80} className="scale-110" />
-              </div>
-              <div className="flex items-center justify-between px-2">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">Sequence-X</span>
-                <span className="text-[9px] font-mono text-indigo-600 font-bold">STABLE</span>
-              </div>
+            <div className="flex items-center justify-between mb-4">
+               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Module Sequence</p>
+               <button onClick={() => setShowLeaderboard(!showLeaderboard)} className="text-indigo-600 hover:text-indigo-700 transition-colors">
+                 <Trophy size={14} />
+               </button>
             </div>
+            
+            <AnimatePresence mode="wait">
+              {showLeaderboard ? (
+                <motion.div 
+                  key="leaderboard"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-3"
+                >
+                  {leaderboard.map((entry, i) => (
+                    <div key={entry.id} className="flex items-center gap-2 text-[10px] bg-slate-50 p-2 rounded-lg border border-slate-100">
+                      <span className="font-mono font-bold text-slate-400">{i + 1}</span>
+                      <img src={entry.userPhoto} alt="" className="w-4 h-4 rounded-full" />
+                      <div className="flex-1 truncate font-bold text-slate-600">{entry.userName}</div>
+                      <div className="font-mono font-bold text-indigo-600 tabular-nums">{entry.score.toLocaleString()}</div>
+                    </div>
+                  ))}
+                  {leaderboard.length === 0 && <p className="text-[10px] text-slate-400 italic text-center py-4">No data retrieved</p>}
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="next"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-4"
+                >
+                  <div className="flex flex-col items-center justify-center bg-slate-50 rounded-xl h-24 border border-slate-100">
+                    <canvas ref={nextCanvasRef} width={80} height={80} className="scale-110" />
+                  </div>
+                  <div className="flex items-center justify-between px-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest italic">Sequence-X</span>
+                    <span className="text-[9px] font-mono text-indigo-600 font-bold uppercase tabular-nums">Next: {gameState.nextPiece?.type}</span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Interface Inputs</p>
-            <div className="space-y-3">
-              {[
-                { label: 'Movement', cmd: 'ARROWS' },
-                { label: 'Flash Drop', cmd: 'SPACE' },
-                { label: 'Swap Buffer', cmd: 'C' },
-                { label: 'Suspend', cmd: 'P' },
-              ].map((item) => (
-                <div key={item.label} className="flex justify-between items-center text-[10px] font-bold border-b border-slate-50 pb-2 last:border-0 last:pb-0">
-                  <span className="text-slate-400 italic font-medium">{item.label}</span>
-                  <span className="text-slate-600 font-mono">[{item.cmd}]</span>
-                </div>
-              ))}
-            </div>
+              <div className="space-y-3">
+                {[
+                  { label: 'Movement', cmd: 'ARROWS / WASD' },
+                  { label: 'Flash Drop', cmd: 'SPACE' },
+                  { label: 'Swap Buffer', cmd: 'C' },
+                  { label: 'Suspend', cmd: 'P' },
+                ].map((item) => (
+                  <div key={item.label} className="flex justify-between items-center text-[10px] font-bold border-b border-slate-50 pb-2 last:border-0 last:pb-0">
+                    <span className="text-slate-400 italic font-medium">{item.label}</span>
+                    <span className="text-slate-600 font-mono">[{item.cmd}]</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-[9px] text-slate-400 font-medium italic text-center">
+                * Click game board to restore keyboard focus
+              </p>
           </div>
         </aside>
-
-        {/* Mobile Stats (Condensed) */}
-        <div className="lg:hidden absolute bottom-24 left-0 right-0 px-8 flex justify-between gap-4">
-           {/* Mobile layout could be enhanced, but we'll stick to basic stats for now */}
-        </div>
 
       </main>
 

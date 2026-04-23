@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { COLS, ROWS, SHAPES, COLORS, PieceType } from '../constants';
 import { GameState, Piece, Pos } from '../types';
 
@@ -29,14 +29,6 @@ export const useTetris = () => {
 
   const canHoldRef = useRef(true);
   const nextPieceRef = useRef<Piece | null>(null);
-  const activePieceRef = useRef<Piece | null>(null);
-  const gridRef = useRef<(string | 0)[][]>([]);
-
-  // Update refs when state changes to avoid stale closures in listeners
-  useEffect(() => {
-    activePieceRef.current = gameState.activePiece;
-    gridRef.current = gameState.grid;
-  }, [gameState.activePiece, gameState.grid]);
 
   const collide = useCallback((pos: Pos, shape: number[][], grid: (string | 0)[][]) => {
     for (let y = 0; y < shape.length; y++) {
@@ -58,7 +50,7 @@ export const useTetris = () => {
     return false;
   }, []);
 
-  const spawn = useCallback((currentHoldPiece: Piece | null = null) => {
+  const spawn = useCallback(() => {
     setGameState(prev => {
       const next = nextPieceRef.current || createPiece(getRandomPieceType());
       const newNext = createPiece(getRandomPieceType());
@@ -72,25 +64,6 @@ export const useTetris = () => {
       return { ...prev, activePiece: next, nextPiece: newNext };
     });
   }, [collide]);
-
-  const reset = useCallback(() => {
-    const firstPiece = createPiece(getRandomPieceType());
-    const nextPiece = createPiece(getRandomPieceType());
-    nextPieceRef.current = nextPiece;
-    canHoldRef.current = true;
-    
-    setGameState({
-      score: 0,
-      level: 1,
-      lines: 0,
-      gameOver: false,
-      paused: false,
-      activePiece: firstPiece,
-      nextPiece: nextPiece,
-      holdPiece: null,
-      grid: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
-    });
-  }, []);
 
   const clearLines = useCallback((grid: (string | 0)[][]) => {
     let linesCleared = 0;
@@ -123,38 +96,32 @@ export const useTetris = () => {
     }
   }, []);
 
-  const merge = useCallback(() => {
-    setGameState(prev => {
-      if (!prev.activePiece) return prev;
-      const newGrid = prev.grid.map(row => [...row]);
-      prev.activePiece.shape.forEach((row, y) => {
-        row.forEach((value, x) => {
-          if (value) {
-            const newY = y + prev.activePiece!.pos.y;
-            const newX = x + prev.activePiece!.pos.x;
-            if (newY >= 0) {
-              newGrid[newY][newX] = prev.activePiece!.color;
-            }
-          }
-        });
-      });
-      return { ...prev, grid: newGrid };
+  const reset = useCallback(() => {
+    const firstPiece = createPiece(getRandomPieceType());
+    const nextPiece = createPiece(getRandomPieceType());
+    nextPieceRef.current = nextPiece;
+    canHoldRef.current = true;
+    
+    setGameState({
+      score: 0,
+      level: 1,
+      lines: 0,
+      gameOver: false,
+      paused: false,
+      activePiece: firstPiece,
+      nextPiece: nextPiece,
+      holdPiece: null,
+      grid: Array.from({ length: ROWS }, () => Array(COLS).fill(0)),
     });
   }, []);
 
-  const rotate = (matrix: number[][]) => {
-    return matrix[0].map((_, i) => matrix.map(row => row[i]).reverse());
-  };
-
   const drop = useCallback(() => {
-    if (gameState.gameOver || gameState.paused) return;
-
     setGameState(prev => {
-      if (!prev.activePiece) return prev;
+      if (prev.gameOver || prev.paused || !prev.activePiece) return prev;
+      
       const nextPos = { ...prev.activePiece.pos, y: prev.activePiece.pos.y + 1 };
       
       if (collide(nextPos, prev.activePiece.shape, prev.grid)) {
-        // Handle bottom collision
         const finalGrid = prev.grid.map(row => [...row]);
         prev.activePiece.shape.forEach((row, y) => {
           row.forEach((value, x) => {
@@ -165,9 +132,6 @@ export const useTetris = () => {
             }
           });
         });
-
-        // We can't use wait for clearLines here because we need state immediately
-        // So we delay the spawn slightly or do it in an effect
         return { ...prev, grid: finalGrid, activePiece: null };
       }
 
@@ -176,59 +140,58 @@ export const useTetris = () => {
         activePiece: { ...prev.activePiece, pos: nextPos },
       };
     });
-  }, [gameState.gameOver, gameState.paused, collide]);
-
-  // Effect to handle state transition after piece drops
-  useEffect(() => {
-    if (!gameState.activePiece && !gameState.gameOver) {
-      clearLines(gameState.grid);
-      spawn();
-    }
-  }, [gameState.activePiece, gameState.gameOver, gameState.grid, clearLines, spawn]);
+  }, [collide]);
 
   const move = useCallback((dir: number) => {
-    if (gameState.gameOver || gameState.paused || !gameState.activePiece) return;
-    const nextPos = { ...gameState.activePiece.pos, x: gameState.activePiece.pos.x + dir };
-    if (!collide(nextPos, gameState.activePiece.shape, gameState.grid)) {
-      setGameState(prev => ({
-        ...prev,
-        activePiece: { ...prev.activePiece!, pos: nextPos }
-      }));
-    }
-  }, [gameState.gameOver, gameState.paused, gameState.activePiece, gameState.grid, collide]);
-
-  const playerRotate = useCallback(() => {
-    if (gameState.gameOver || gameState.paused || !gameState.activePiece) return;
-    const oldShape = gameState.activePiece.shape;
-    const newShape = rotate(oldShape);
-    const pos = { ...gameState.activePiece.pos };
-    let offset = 1;
-
-    // Simple wall kick
-    while (collide(pos, newShape, gameState.grid)) {
-      pos.x += offset;
-      offset = -(offset + (offset > 0 ? 1 : -1));
-      if (offset > newShape[0].length) {
-        // Restore
-        return;
+    setGameState(prev => {
+      if (prev.gameOver || prev.paused || !prev.activePiece) return prev;
+      const nextPos = { ...prev.activePiece.pos, x: prev.activePiece.pos.x + dir };
+      if (!collide(nextPos, prev.activePiece.shape, prev.grid)) {
+        return {
+          ...prev,
+          activePiece: { ...prev.activePiece, pos: nextPos }
+        };
       }
-    }
+      return prev;
+    });
+  }, [collide]);
 
-    setGameState(prev => ({
-      ...prev,
-      activePiece: { ...prev.activePiece!, shape: newShape, pos }
-    }));
-  }, [gameState.gameOver, gameState.paused, gameState.activePiece, gameState.grid, collide]);
+  const rotateAction = useCallback(() => {
+    setGameState(prev => {
+      if (prev.gameOver || prev.paused || !prev.activePiece) return prev;
+      
+      const rotateMatrix = (matrix: number[][]) => {
+        return matrix[0].map((_, i) => matrix.map(row => row[i]).reverse());
+      };
+
+      const newShape = rotateMatrix(prev.activePiece.shape);
+      const pos = { ...prev.activePiece.pos };
+      let offset = 1;
+
+      while (collide(pos, newShape, prev.grid)) {
+        pos.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (offset > newShape[0].length) {
+          return prev;
+        }
+      }
+
+      return {
+        ...prev,
+        activePiece: { ...prev.activePiece, shape: newShape, pos }
+      };
+    });
+  }, [collide]);
 
   const hardDrop = useCallback(() => {
-    if (gameState.gameOver || gameState.paused || !gameState.activePiece) return;
-    let finalY = gameState.activePiece.pos.y;
-    while (!collide({ ...gameState.activePiece.pos, y: finalY + 1 }, gameState.activePiece.shape, gameState.grid)) {
-      finalY++;
-    }
-    
     setGameState(prev => {
-      if (!prev.activePiece) return prev;
+      if (prev.gameOver || prev.paused || !prev.activePiece) return prev;
+      
+      let finalY = prev.activePiece.pos.y;
+      while (!collide({ ...prev.activePiece.pos, y: finalY + 1 }, prev.activePiece.shape, prev.grid)) {
+        finalY++;
+      }
+      
       const finalGrid = prev.grid.map(row => [...row]);
       prev.activePiece.shape.forEach((row, y) => {
         row.forEach((value, x) => {
@@ -241,13 +204,13 @@ export const useTetris = () => {
       });
       return { ...prev, grid: finalGrid, activePiece: null };
     });
-  }, [gameState.gameOver, gameState.paused, gameState.activePiece, gameState.grid, collide]);
+  }, [collide]);
 
   const hold = useCallback(() => {
-    if (gameState.gameOver || gameState.paused || !gameState.activePiece || !canHoldRef.current) return;
-    
     setGameState(prev => {
-      const currentType = prev.activePiece!.type;
+      if (prev.gameOver || prev.paused || !prev.activePiece || !canHoldRef.current) return prev;
+      
+      const currentType = prev.activePiece.type;
       let nextToSpawn: Piece;
       let newHold: Piece;
 
@@ -268,13 +231,19 @@ export const useTetris = () => {
         nextPiece: nextPieceRef.current,
       };
     });
-  }, [gameState.gameOver, gameState.paused, gameState.activePiece]);
+  }, []);
 
   const togglePause = useCallback(() => {
     setGameState(prev => ({ ...prev, paused: !prev.paused }));
   }, []);
 
-  // Game Loop
+  useEffect(() => {
+    if (!gameState.activePiece && !gameState.gameOver) {
+      clearLines(gameState.grid);
+      spawn();
+    }
+  }, [gameState.activePiece, gameState.gameOver, gameState.grid, clearLines, spawn]);
+
   useEffect(() => {
     if (gameState.gameOver || gameState.paused) return;
     const interval = Math.max(100, 1000 - (gameState.level - 1) * 100);
@@ -282,16 +251,18 @@ export const useTetris = () => {
     return () => clearInterval(timer);
   }, [gameState.gameOver, gameState.paused, gameState.level, drop]);
 
+  const methods = useMemo(() => ({
+    move,
+    rotate: rotateAction,
+    drop,
+    hardDrop,
+    hold,
+    reset,
+    togglePause,
+  }), [move, rotateAction, drop, hardDrop, hold, reset, togglePause]);
+
   return {
     gameState,
-    methods: {
-      move,
-      rotate: playerRotate,
-      drop,
-      hardDrop,
-      hold,
-      reset,
-      togglePause,
-    },
+    methods,
   };
 };

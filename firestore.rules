@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // helpers
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['displayName', 'lastLogin']) 
+          && data.keys().size() <= 3
+          && data.displayName is string && data.displayName.size() <= 100
+          && data.lastLogin == request.time;
+      }
+
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'lastLogin']);
+    }
+
+    // Leaderboard
+    match /leaderboard/{scoreId} {
+      function isValidScore(data) {
+        return data.keys().hasAll(['userId', 'userName', 'score', 'level', 'lines', 'timestamp'])
+          && data.keys().size() <= 7
+          && data.userId == request.auth.uid
+          && data.userName is string && data.userName.size() <= 100
+          && data.score is int && data.score >= 0
+          && data.level is int && data.level >= 1
+          && data.lines is int && data.lines >= 0
+          && data.timestamp == request.time;
+      }
+
+      // Public can see the leaderboard
+      // Secure list query enforcement
+      allow list: if request.query.limit <= 20; 
+      allow get: if true;
+      
+      allow create: if isSignedIn() 
+        && isValidScore(incoming())
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        
+      allow update, delete: if false; // Scores are immutable
+    }
+  }
+}
