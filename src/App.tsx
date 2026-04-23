@@ -276,13 +276,6 @@ export default function App() {
 
       {/* Main Game Area */}
       <main className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 p-4 lg:p-10 overflow-auto relative">
-        {/* Click to focus overlay when not focused (safari/iframe issues) */}
-        {!gameState.gameOver && !gameState.paused && (
-          <button 
-            className="absolute inset-0 z-[5] cursor-default bg-transparent"
-            onClick={() => containerRef.current?.focus()}
-          />
-        )}
         
         {/* Left Stats Side (Desktop) */}
         <aside className="w-56 space-y-6 hidden lg:block">
@@ -327,7 +320,7 @@ export default function App() {
         </aside>
 
         {/* Mobile Stats (Top) */}
-        <div className="lg:hidden flex flex-col gap-3 w-full max-w-[300px]">
+        <div className="lg:hidden flex flex-col gap-3 w-full max-w-[300px] z-10">
           <div className="flex gap-4 justify-between items-center">
             <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex-1 text-center">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Score</p>
@@ -347,12 +340,15 @@ export default function App() {
           
           {/* Mobile Hold/Next Preview Bar */}
           <div className="flex gap-4 items-center justify-center">
-            <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm flex items-center gap-3">
+            <button 
+              onClick={() => methods.hold()}
+              className="bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm flex items-center gap-3 active:bg-slate-50 transition-colors"
+            >
               <span className="text-[8px] font-bold text-slate-400 uppercase">Hold</span>
               <div className="w-10 h-10 flex items-center justify-center overflow-hidden">
                 <canvas ref={holdCanvasRef} width={40} height={40} className="scale-125" />
               </div>
-            </div>
+            </button>
             <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm flex items-center gap-3">
               <div className="w-10 h-10 flex items-center justify-center overflow-hidden">
                 <canvas ref={nextCanvasRef} width={40} height={40} className="scale-125" />
@@ -369,7 +365,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="lg:hidden absolute inset-4 z-[30] bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 flex flex-col"
+              className="lg:hidden absolute inset-4 z-[40] bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 flex flex-col"
             >
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
@@ -378,7 +374,7 @@ export default function App() {
                 </h3>
                 <button onClick={() => setShowLeaderboard(false)} className="text-slate-400 hover:text-slate-600 font-bold text-lg">×</button>
               </div>
-              <div className="space-y-3 overflow-auto flex-1">
+              <div className="space-y-3 overflow-auto flex-1 text-left">
                 {leaderboard.map((entry, i) => (
                   <div key={entry.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
                     <span className="w-6 text-xs font-mono font-bold text-slate-400">#{i + 1}</span>
@@ -400,9 +396,17 @@ export default function App() {
         </AnimatePresence>
 
         {/* Center Game Section */}
-        <section className="relative flex flex-col items-center">
+        <section className="relative flex flex-col items-center z-10">
           <div className="relative p-[3px] bg-slate-300 rounded-xl shadow-2xl shadow-slate-200 overflow-hidden">
             <div className="relative w-[300px] h-[600px] bg-white rounded-lg overflow-hidden flex flex-col grid-pattern">
+              {/* Click to focus layer - NOW LIMITED TO BOARD AREA ONLY */}
+              {!gameState.gameOver && !gameState.paused && (
+                <button 
+                  className="absolute inset-0 z-[5] cursor-default bg-transparent"
+                  onClick={() => containerRef.current?.focus()}
+                />
+              )}
+
               <canvas 
                 ref={canvasRef} 
                 width={300} 
