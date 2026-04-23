@@ -275,7 +275,7 @@ export default function App() {
       </header>
 
       {/* Main Game Area */}
-      <main className="flex-1 flex items-center justify-center gap-12 p-10 overflow-auto relative">
+      <main className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 p-4 lg:p-10 overflow-auto relative">
         {/* Click to focus overlay when not focused (safari/iframe issues) */}
         {!gameState.gameOver && !gameState.paused && (
           <button 
@@ -284,7 +284,7 @@ export default function App() {
           />
         )}
         
-        {/* Left Stats Side */}
+        {/* Left Stats Side (Desktop) */}
         <aside className="w-56 space-y-6 hidden lg:block">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Current Score</p>
@@ -315,19 +315,92 @@ export default function App() {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">On-Screen Controls</p>
             <div className="grid grid-cols-3 gap-2">
               <div />
-              <button onClick={() => methods.rotate()} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowUp size={16} /></button>
+              <button onClick={() => methods.rotate()} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors active:bg-slate-200"><ArrowUp size={16} /></button>
               <div />
-              <button onClick={() => methods.move(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowLeft size={16} /></button>
-              <button onClick={() => methods.drop()} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowDown size={16} /></button>
-              <button onClick={() => methods.move(1)} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center"><ArrowRight size={16} /></button>
-              <button onClick={() => methods.hold()} className="p-2 bg-slate-900 text-white border border-slate-200 rounded-lg text-[9px] font-bold uppercase tracking-widest flex items-center justify-center">HOLD</button>
-              <button onClick={() => methods.hardDrop()} className="p-2 bg-indigo-600 text-white border border-indigo-200 rounded-lg text-[9px] font-bold uppercase tracking-widest flex items-center justify-center col-span-2">DROP</button>
+              <button onClick={() => methods.move(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors active:bg-slate-200"><ArrowLeft size={16} /></button>
+              <button onClick={() => methods.drop()} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors active:bg-slate-200"><ArrowDown size={16} /></button>
+              <button onClick={() => methods.move(1)} className="p-3 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors active:bg-slate-200"><ArrowRight size={16} /></button>
+              <button onClick={() => methods.hold()} className="p-2 bg-slate-900 text-white border border-slate-200 rounded-lg text-[9px] font-bold uppercase tracking-widest flex items-center justify-center transition-colors active:bg-slate-700">HOLD</button>
+              <button onClick={() => methods.hardDrop()} className="p-2 bg-indigo-600 text-white border border-indigo-200 rounded-lg text-[9px] font-bold uppercase tracking-widest flex items-center justify-center col-span-2 transition-colors active:bg-indigo-700">DROP</button>
             </div>
           </div>
         </aside>
 
+        {/* Mobile Stats (Top) */}
+        <div className="lg:hidden flex flex-col gap-3 w-full max-w-[300px]">
+          <div className="flex gap-4 justify-between items-center">
+            <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex-1 text-center">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Score</p>
+              <p className="text-lg font-mono font-bold text-slate-900 tabular-nums">{gameState.score.toLocaleString()}</p>
+            </div>
+            <button 
+              onClick={() => setShowLeaderboard(!showLeaderboard)}
+              className={`p-3 rounded-xl border transition-all ${showLeaderboard ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-indigo-600'}`}
+            >
+              <Trophy size={20} />
+            </button>
+            <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex-1 text-center">
+               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">LV / LN</p>
+               <p className="text-lg font-mono font-bold text-indigo-600 tabular-nums">{gameState.level} / {gameState.lines}</p>
+            </div>
+          </div>
+          
+          {/* Mobile Hold/Next Preview Bar */}
+          <div className="flex gap-4 items-center justify-center">
+            <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm flex items-center gap-3">
+              <span className="text-[8px] font-bold text-slate-400 uppercase">Hold</span>
+              <div className="w-10 h-10 flex items-center justify-center overflow-hidden">
+                <canvas ref={holdCanvasRef} width={40} height={40} className="scale-125" />
+              </div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm flex items-center gap-3">
+              <div className="w-10 h-10 flex items-center justify-center overflow-hidden">
+                <canvas ref={nextCanvasRef} width={40} height={40} className="scale-125" />
+              </div>
+              <span className="text-[8px] font-bold text-slate-400 uppercase">Next</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Leaderboard Overlay (Visible only when showLeaderboard is true on mobile) */}
+        <AnimatePresence>
+          {showLeaderboard && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="lg:hidden absolute inset-4 z-[30] bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                  <Trophy className="text-indigo-600" size={18} />
+                  Top Operatives
+                </h3>
+                <button onClick={() => setShowLeaderboard(false)} className="text-slate-400 hover:text-slate-600 font-bold text-lg">×</button>
+              </div>
+              <div className="space-y-3 overflow-auto flex-1">
+                {leaderboard.map((entry, i) => (
+                  <div key={entry.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="w-6 text-xs font-mono font-bold text-slate-400">#{i + 1}</span>
+                    <img src={entry.userPhoto} alt="" className="w-8 h-8 rounded-full border border-white shadow-sm" />
+                    <div className="flex-1 truncate text-xs font-bold text-slate-900">{entry.userName}</div>
+                    <div className="text-xs font-mono font-bold text-indigo-600">{entry.score.toLocaleString()}</div>
+                  </div>
+                ))}
+                {leaderboard.length === 0 && <p className="text-sm text-slate-400 italic text-center py-10">Searching network...</p>}
+              </div>
+              <button 
+                onClick={() => setShowLeaderboard(false)}
+                className="mt-6 w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest"
+              >
+                Return to Mission
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Center Game Section */}
-        <section className="relative">
+        <section className="relative flex flex-col items-center">
           <div className="relative p-[3px] bg-slate-300 rounded-xl shadow-2xl shadow-slate-200 overflow-hidden">
             <div className="relative w-[300px] h-[600px] bg-white rounded-lg overflow-hidden flex flex-col grid-pattern">
               <canvas 
@@ -375,7 +448,7 @@ export default function App() {
                         <span className="uppercase tracking-widest text-xs">{gameState.paused ? 'Initialize Stream' : 'Sync New Session'}</span>
                       </button>
 
-                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest lg:block hidden">
                         Command: {gameState.paused ? '[P] to resume' : '[Space] to begin'}
                       </p>
                     </motion.div>
@@ -386,9 +459,59 @@ export default function App() {
           </div>
           {/* Decorative side accent */}
           <div className="absolute -right-4 top-1/2 -translate-y-1/2 w-1.5 h-32 bg-indigo-600 rounded-full shadow-[0_0_15px_rgba(79,70,229,0.4)] md:block hidden" />
+
+          {/* Mobile Actions Zone (Visible only on mobile) */}
+          <div className="lg:hidden mt-6 w-full max-w-[300px] space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <button 
+                onClick={() => methods.hold()} 
+                className="col-span-1 p-3 bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+              >
+                HOLD
+              </button>
+              <button 
+                onClick={() => methods.hardDrop()} 
+                className="col-span-2 p-3 bg-indigo-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center shadow-lg shadow-indigo-100 active:scale-95 transition-transform"
+              >
+                DROP SEQUENCE
+              </button>
+            </div>
+            
+            <div className="flex items-center justify-center gap-4">
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => methods.move(-1)} 
+                  className="w-16 h-16 bg-white border border-slate-200 rounded-2xl flex items-center justify-center shadow-md active:bg-slate-50 active:scale-95 transition-all"
+                >
+                  <ArrowLeft size={24} className="text-slate-600" />
+                </button>
+                <button 
+                  onClick={() => methods.move(1)} 
+                  className="w-16 h-16 bg-white border border-slate-200 rounded-2xl flex items-center justify-center shadow-md active:bg-slate-50 active:scale-95 transition-all"
+                >
+                  <ArrowRight size={24} className="text-slate-600" />
+                </button>
+              </div>
+              <div className="w-px h-12 bg-slate-200" />
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => methods.drop()} 
+                  className="w-16 h-16 bg-white border border-slate-200 rounded-2xl flex items-center justify-center shadow-md active:bg-slate-50 active:scale-95 transition-all"
+                >
+                  <ArrowDown size={24} className="text-slate-600" />
+                </button>
+                <button 
+                  onClick={() => methods.rotate()} 
+                  className="w-16 h-16 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-md active:bg-indigo-100 active:scale-95 transition-all"
+                >
+                  <ArrowUp size={24} className="text-indigo-600" />
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
-        {/* Right Info Side */}
+        {/* Right Info Side (Desktop) */}
         <aside className="w-56 space-y-6 hidden lg:block">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
